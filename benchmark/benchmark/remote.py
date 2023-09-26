@@ -8,6 +8,7 @@ from os.path import basename, splitext
 from time import sleep
 from math import ceil
 from copy import deepcopy
+import csv
 import subprocess
 
 from benchmark.config import Committee, Key, NodeParameters, BenchParameters, ConfigError
@@ -89,12 +90,22 @@ class Bench:
         delete_logs = CommandMaker.clean_logs() if delete_logs else 'true'
         cmd = [delete_logs, f'({CommandMaker.kill()} || true)']
         try:
-            g = Group(*hosts, user='ubuntu', connect_kwargs=self.connect)
+            g = Group(*hosts, user=self.settings.key_name, connect_kwargs=self.connect)
             g.run(' && '.join(cmd), hide=True)
         except GroupException as e:
             raise BenchError('Failed to kill nodes', FabricError(e))
 
     def _select_hosts(self, bench_parameters):
+        # If you used the GCP scripts from here https://github.com/sm86/gcp-scripts      
+        if(self.settings.provider == "google_compute_engine"):
+            addrs = [] 
+            nodes = max(bench_parameters.nodes)
+            with open(self.settings.ip_file, 'r') as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    addrs.append(row['Internal IP'])
+            return addrs[:nodes]
+    
         # Collocate the primary and its workers on the same machine.
         if bench_parameters.collocate:
             nodes = max(bench_parameters.nodes)
@@ -132,7 +143,7 @@ class Bench:
     def _background_run(self, host, command, log_file):
         name = splitext(basename(log_file))[0]
         cmd = f'tmux new -d -s "{name}" "{command} |& tee {log_file}"'
-        c = Connection(host, user='ubuntu', connect_kwargs=self.connect)
+        c = Connection(host, user=self.settings.key_name, connect_kwargs=self.connect)
         output = c.run(cmd, hide=True)
         self._check_stderr(output)
 
@@ -145,7 +156,11 @@ class Bench:
         Print.info(
             f'Updating {len(ips)} machines (branch "{self.settings.branch}")...'
         )
+        # Check if the repo directory exists
+        check_repo_cmd = f'[ -d {self.settings.repo_name} ] || git clone {self.settings.repo_url}'
+
         cmd = [
+            check_repo_cmd,
             f'(cd {self.settings.repo_name} && git fetch -f)',
             f'(cd {self.settings.repo_name} && git checkout -f {self.settings.branch})',
             f'(cd {self.settings.repo_name} && git pull -f)',
@@ -155,7 +170,7 @@ class Bench:
                 f'./{self.settings.repo_name}/target/release/'
             )
         ]
-        g = Group(*ips, user='ubuntu', connect_kwargs=self.connect)
+        g = Group(*ips, user=self.settings.key_name, connect_kwargs=self.connect)
         g.run(' && '.join(cmd), hide=True)
 
     def _config(self, hosts, node_parameters, bench_parameters):
@@ -202,7 +217,7 @@ class Bench:
         progress = progress_bar(names, prefix='Uploading config files:')
         for i, name in enumerate(progress):
             for ip in committee.ips(name):
-                c = Connection(ip, user='ubuntu', connect_kwargs=self.connect)
+                c = Connection(ip, user=self.settings.key_name, connect_kwargs=self.connect)
                 c.run(f'{CommandMaker.cleanup()} || true', hide=True)
                 c.put(PathMaker.committee_file(), '.')
                 c.put(PathMaker.key_file(i), '.')
@@ -282,7 +297,7 @@ class Bench:
         for i, addresses in enumerate(progress):
             for id, address in addresses:
                 host = Committee.ip(address)
-                c = Connection(host, user='ubuntu', connect_kwargs=self.connect)
+                c = Connection(host, user=self.settings.key_name, connect_kwargs=self.connect)
                 c.get(
                     PathMaker.client_log_file(i, id), 
                     local=PathMaker.client_log_file(i, id)
@@ -296,7 +311,7 @@ class Bench:
         progress = progress_bar(primary_addresses, prefix='Downloading primaries logs:')
         for i, address in enumerate(progress):
             host = Committee.ip(address)
-            c = Connection(host, user='ubuntu', connect_kwargs=self.connect)
+            c = Connection(host, user=self.settings.key_name, connect_kwargs=self.connect)
             c.get(
                 PathMaker.primary_log_file(i), 
                 local=PathMaker.primary_log_file(i)
@@ -317,17 +332,22 @@ class Bench:
 
         # Select which hosts to use.
         selected_hosts = self._select_hosts(bench_parameters)
-        if not selected_hosts:
+        print(selected_hosts)
+        if not selected_hosts or (len(selected_hosts) < max(bench_parameters.nodes)):
             Print.warn('There are not enough instances available')
             return
 
+        if bench_parameters.collocate==False:
+            Print.warn('This mode is disabled for these experiments')
+            return
+        
         # Update nodes.
         try:
             self._update(selected_hosts, bench_parameters.collocate)
         except (GroupException, ExecutionError) as e:
             e = FabricError(e) if isinstance(e, GroupException) else e
             raise BenchError('Failed to update nodes', e)
-
+        
         # Upload all configuration files.
         try:
             committee = self._config(
@@ -336,7 +356,7 @@ class Bench:
         except (subprocess.SubprocessError, GroupException) as e:
             e = FabricError(e) if isinstance(e, GroupException) else e
             raise BenchError('Failed to configure nodes', e)
-
+        
         # Run benchmarks.
         for n in bench_parameters.nodes:
             committee_copy = deepcopy(committee)

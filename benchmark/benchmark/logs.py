@@ -61,7 +61,8 @@ class LogParser:
 
         # Determine whether the primary and the workers are collocated.
         self.collocate = set(primary_ips) == set(workers_ips)
-
+        
+        print(self.result())
         # Check whether clients missed their target rate.
         if self.misses != 0:
             Print.warn(
