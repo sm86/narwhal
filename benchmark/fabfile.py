@@ -98,13 +98,13 @@ def remote(ctx, debug=False):
         'nodes': [4],
         'workers': 1,
         'collocate': True,
-        'rate': [10_000],
+        'rate': [20_000],
         'tx_size': 512,
         'duration': 20,
         'runs': 1,
     }
     node_params = {
-        'header_size': 50,  # bytes
+        'header_size': 50,  #    bytes
         'max_header_delay': 5_000,  # ms
         'gc_depth': 50,  # rounds
         'sync_retry_delay': 10_000,  # ms
@@ -113,10 +113,39 @@ def remote(ctx, debug=False):
         'max_batch_delay': 200  # ms
     }
     try:
-        Bench(ctx).run(bench_params, node_params, debug)
+        Bench(ctx).run(bench_params, node_params, None, debug)
     except BenchError as e:
         Print.error(e)
 
+@task
+def georemote(ctx, debug=False):
+    ''' Run benchmarks on cloud with induced latencies'''
+    
+    geoInput = {1: 3, 2: 1}
+
+    bench_params = {
+        'faults': 0,
+        'nodes': [4],
+        'workers': 1,
+        'collocate': True,
+        'rate': [20_000],
+        'tx_size': 512,
+        'duration': 20,
+        'runs': 1,
+    }
+    node_params = {
+        'header_size': 50,  #    bytes
+        'max_header_delay': 900_000,  # ms
+        'gc_depth': 50,  # rounds
+        'sync_retry_delay': 900_000,  # ms
+        'sync_retry_nodes': 3,  # number of nodes
+        'batch_size': 200_000,  # bytes
+        'max_batch_delay': 2000  # ms
+    }
+    try:
+        Bench(ctx).run(bench_params, node_params, geoInput, debug)
+    except BenchError as e:
+        Print.error(e)
 
 @task
 def plot(ctx):

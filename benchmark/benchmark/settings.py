@@ -9,6 +9,7 @@ class SettingsError(Exception):
 class Settings:
     def __init__(self, key_name, key_path, base_port, repo_name, repo_url,
                  branch, instance_type, aws_regions,
+                 geodec_interface, geodec_servers_file, geodec_ping_grouped_file,
                  provider, ip_file):
         inputs_str = [
             key_name, key_path, repo_name, repo_url, branch, instance_type
@@ -36,6 +37,10 @@ class Settings:
         self.instance_type = instance_type
         self.aws_regions = regions
         
+        self.interface = geodec_interface
+        self.servers_file = geodec_servers_file
+        self.ping_grouped_file = geodec_ping_grouped_file
+        
         self.provider = provider
         self.ip_file = ip_file
 
@@ -54,6 +59,9 @@ class Settings:
                 data['repo']['branch'],
                 data['instances']['type'],
                 data['instances']['regions'],
+                data['geodec']['interface'],
+                data['geodec']['servers_file'],
+                data['geodec']['pings_grouped_file'],
                 data['configuration']['provider'],
                 data['configuration']['ip_file']
             )

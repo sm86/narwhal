@@ -64,3 +64,11 @@ class CommandMaker:
         assert isinstance(origin, str)
         node, client = join(origin, 'node'), join(origin, 'benchmark_client')
         return f'rm node ; rm benchmark_client ; ln -s {node} . ; ln -s {client} .'
+
+    @staticmethod
+    def initalizeDelayQDisc(interface):
+        return (f'sudo tc qdisc add dev {interface} parent root handle 1:0 htb default 100')
+    
+    @staticmethod
+    def deleteDelayQDisc(interface):
+        return (f'sudo tc qdisc del dev {interface} parent root')
